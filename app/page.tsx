@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import QueryInput from "@/components/query-input";
-import MapPanel from "@/components/results/map-panel";
-import ChartPanel from "@/components/results/chart-panel";
-import SummaryPanel from "@/components/results/summary-panel";
+import { MapPanel } from "@/components/results/map-panel";
+import { ChartPanel } from "@/components/results/chart-panel";
+import { SummaryPanel } from "@/components/results/summary-panel";
 
 type Status = "idle" | "planning" | "running" | "done" | "error";
 

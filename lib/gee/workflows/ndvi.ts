@@ -35,6 +35,53 @@ function addNDVI(image: any) {
 }
 
 /**
+ * Calculate months between two dates
+ */
+function getMonthsBetweenDates(startDate: string, endDate: string): string[] {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const months: string[] = [];
+
+  const current = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+
+  while (current <= endMonth) {
+    const year = current.getFullYear();
+    const month = (current.getMonth() + 1).toString().padStart(2, "0");
+    months.push(`${year}-${month}`);
+    current.setMonth(current.getMonth() + 1);
+  }
+
+  return months;
+}
+
+/**
+ * Create monthly composite for a specific year-month
+ */
+function createMonthlyComposite(
+  collection: any,
+  geometry: any,
+  yearMonth: string
+): any {
+  const [year, month] = yearMonth.split("-");
+  const startDate = `${year}-${month}-01`;
+
+  // Calculate end date (last day of month)
+  const monthNum = parseInt(month);
+  const yearNum = parseInt(year);
+  const lastDay = new Date(yearNum, monthNum, 0).getDate();
+  const endDate = `${year}-${month}-${lastDay}`;
+
+  // Filter to this specific month
+  const monthlyCollection = collection.filterDate(startDate, endDate);
+
+  // Create median composite to reduce noise
+  const composite = monthlyCollection.select("NDVI").median();
+
+  return composite;
+}
+
+/**
  * Execute NDVI time series workflow
  */
 export async function executeNDVITimeSeries(
@@ -53,14 +100,73 @@ export async function executeNDVITimeSeries(
   // Apply cloud mask and calculate NDVI
   collection = collection.map(maskS2Clouds).map(addNDVI);
 
-  // Create monthly composites
-  const months = ee.List.sequence(1, 12);
-  const startYear = parseInt(timeRange.start.split("-")[0]);
-  const endYear = parseInt(timeRange.end.split("-")[0]);
+  // Calculate all months in the date range
+  const months = getMonthsBetweenDates(timeRange.start, timeRange.end);
+  console.log(
+    `[NDVI Workflow] Processing ${months.length} months from ${timeRange.start} to ${timeRange.end}`
+  );
 
+  // Generate time series data for each month
   const monthlyNDVI: TimeSeriesPoint[] = [];
 
-  // Sample approach: Create mean NDVI image for visualization
+  for (const yearMonth of months) {
+    try {
+      const composite = createMonthlyComposite(collection, geometry, yearMonth);
+
+      // Calculate mean NDVI for this month
+      const stats = composite.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: geometry,
+        scale: 100,
+        maxPixels: 1e9,
+      });
+
+      // Evaluate the result asynchronously
+      const result = await new Promise<any>((resolve, reject) => {
+        stats.evaluate((res: any, error?: string) => {
+          if (error) {
+            reject(new Error(error));
+          } else {
+            resolve(res);
+          }
+        });
+      });
+
+      const ndviValue = result.NDVI;
+
+      // Only add data points that have valid values
+      if (ndviValue !== null && ndviValue !== undefined && !isNaN(ndviValue)) {
+        monthlyNDVI.push({
+          date: `${yearMonth}-15`, // Use 15th as representative day of month
+          value: ndviValue,
+          label: yearMonth,
+        });
+        console.log(
+          `[NDVI Workflow] ${yearMonth}: NDVI = ${ndviValue.toFixed(4)}`
+        );
+      } else {
+        console.warn(
+          `[NDVI Workflow] ${yearMonth}: No valid data (cloudy or no coverage)`
+        );
+      }
+    } catch (error) {
+      console.error(`[NDVI Workflow] Error processing ${yearMonth}:`, error);
+      // Continue with next month even if this one fails
+    }
+  }
+
+  // If we got no valid data points, throw an error
+  if (monthlyNDVI.length === 0) {
+    throw new Error(
+      "No valid NDVI data found for the specified time range and location. Try a different date range or location."
+    );
+  }
+
+  console.log(
+    `[NDVI Workflow] Successfully generated ${monthlyNDVI.length} data points`
+  );
+
+  // Create mean NDVI image for map visualization (using all available data)
   const meanNDVI = collection.select("NDVI").mean();
 
   // Get tile URL for map visualization
@@ -75,43 +181,11 @@ export async function executeNDVITimeSeries(
         if (error) {
           reject(new Error(error));
         } else {
-          const url = `https://earthengine.googleapis.com/v1alpha/${mapId.tile_fetcher.url_format}`;
-          resolve(url);
+          resolve(mapId.urlFormat);
         }
       }
     );
   });
-
-  // For PoC: Calculate mean NDVI per month
-  // In production, this would be more sophisticated
-  const meanValue = await new Promise<number>((resolve, reject) => {
-    const stats = meanNDVI.reduceRegion({
-      reducer: ee.Reducer.mean(),
-      geometry: geometry,
-      scale: 100,
-      maxPixels: 1e9,
-    });
-
-    stats.evaluate((result: any, error?: string) => {
-      if (error) {
-        reject(new Error(error));
-      } else {
-        resolve(result.NDVI || 0.5);
-      }
-    });
-  });
-
-  // Generate sample time series (simplified for PoC)
-  const numMonths = 12;
-  for (let i = 0; i < numMonths; i++) {
-    const month = i + 1;
-    const dateStr = `${startYear}-${month.toString().padStart(2, "0")}-15`;
-    monthlyNDVI.push({
-      date: dateStr,
-      value: meanValue + (Math.random() - 0.5) * 0.1, // Add some variation
-      label: `Month ${month}`,
-    });
-  }
 
   return {
     timeSeries: monthlyNDVI,
@@ -169,8 +243,7 @@ export async function executeNDVIChange(
         if (error) {
           reject(new Error(error));
         } else {
-          const url = `https://earthengine.googleapis.com/v1alpha/${mapId.tile_fetcher.url_format}`;
-          resolve(url);
+          resolve(mapId.urlFormat);
         }
       }
     );

@@ -16,6 +16,8 @@ export const summaryStatsSchema = z.object({
   mean: z.number().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
+  minDate: z.string().optional(),
+  maxDate: z.string().optional(),
   stdDev: z.number().optional(),
   trend: z.string().optional(),
   changePercent: z.number().optional(),

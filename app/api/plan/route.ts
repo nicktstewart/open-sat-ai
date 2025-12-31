@@ -5,7 +5,15 @@ import { safeValidateAnalysisPlan } from "@/lib/schemas/analysis-plan";
  * System prompt for the planner LLM
  * This enforces strict output format and allowed operations
  */
-const PLANNER_SYSTEM_PROMPT = `You are a satellite data analysis planner. Your job is to convert user queries into structured analysis plans.
+function getPlannerSystemPrompt(): string {
+  const now = new Date();
+  const currentDate = now.toISOString().split("T")[0]; // YYYY-MM-DD format
+  const currentYear = now.getFullYear();
+
+  return `You are a satellite data analysis planner. Your job is to convert user queries into structured analysis plans.
+
+CURRENT DATE: ${currentDate}
+CURRENT YEAR: ${currentYear}
 
 ALLOWED ANALYSIS TYPES:
 - ndvi_change: Calculate vegetation change between two periods
@@ -14,9 +22,9 @@ ALLOWED ANALYSIS TYPES:
 - seasonal_trend: Analyze seasonal vegetation patterns
 
 ALLOWED DATASETS:
-- sentinel2: Sentinel-2 optical imagery (10m resolution)
-- landsat8: Landsat 8 optical imagery (30m resolution)
-- modis: MODIS moderate resolution imagery (250m-1km)
+- sentinel2: Sentinel-2 optical imagery (10m resolution) - Available from 2015-06-23 onwards
+- landsat8: Landsat 8 optical imagery (30m resolution) - Available from 2013-04-11 onwards
+- modis: MODIS moderate resolution imagery (250m-1km) - Available from 2000-02-24 onwards
 
 ALLOWED OUTPUTS:
 - map: Spatial visualization
@@ -33,9 +41,19 @@ RULES:
 1. Output ONLY valid JSON matching the schema
 2. No explanations, no markdown, no extra text
 3. Dates must be YYYY-MM-DD format
-4. Time range cannot exceed 5 years
-5. If query is unclear, make reasonable assumptions
-6. Reject queries about non-vegetation topics
+4. End date CANNOT exceed ${currentDate} (today)
+5. Start date must be before end date
+6. Time range cannot exceed 5 years
+7. Calculate relative dates based on current date:
+   - "past 3 years" = ${currentYear - 3}-01-01 to ${currentDate}
+   - "past year" = ${currentYear - 1}-01-01 to ${currentDate}
+   - "past 6 months" = calculate 6 months before ${currentDate}
+   - "last year" = ${currentYear - 1}-01-01 to ${currentYear - 1}-12-31
+   - "this year" = ${currentYear}-01-01 to ${currentDate}
+8. If query is unclear, make reasonable assumptions
+9. Reject queries about non-vegetation topics
+10. For seasonal analysis, ensure full years are covered
+11. Sentinel-2 data only available from 2015 onwards
 
 OUTPUT SCHEMA:
 {
@@ -49,6 +67,7 @@ OUTPUT SCHEMA:
   "outputs": ["map" | "timeseries" | "statistics" | "summary"],
   "parameters": {} // optional
 }`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,7 +101,7 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: "system",
-            content: PLANNER_SYSTEM_PROMPT,
+            content: getPlannerSystemPrompt(),
           },
           {
             role: "user",
@@ -138,6 +157,48 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Additional date validation
+    const plan = validation.data;
+    const now = new Date();
+    const currentDate = now.toISOString().split("T")[0];
+    const startDate = new Date(plan.timeRange.start);
+    const endDate = new Date(plan.timeRange.end);
+    const todayDate = new Date(currentDate);
+
+    // Validate dates don't exceed current date
+    if (endDate > todayDate) {
+      return NextResponse.json(
+        {
+          error: "Invalid date range",
+          message: `End date (${plan.timeRange.end}) cannot be in the future. Current date is ${currentDate}.`,
+          userFriendly: true,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate start date is before end date
+    if (startDate >= endDate) {
+      return NextResponse.json(
+        {
+          error: "Invalid date range",
+          message: "Start date must be before end date.",
+          userFriendly: true,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate Sentinel-2 availability (from 2015-06-23)
+    if (plan.datasets.includes("sentinel2")) {
+      const sentinel2Start = new Date("2015-06-23");
+      if (startDate < sentinel2Start) {
+        console.warn(
+          `Sentinel-2 data not available before 2015-06-23. Start date: ${plan.timeRange.start}`
+        );
+      }
     }
 
     // Return validated plan
