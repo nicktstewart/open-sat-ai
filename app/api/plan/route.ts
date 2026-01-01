@@ -51,12 +51,14 @@ RULES:
    - "past 3 years" = ${currentYear - 3}-01-01 to ${currentDate}
    - "past year" = ${currentYear - 1}-01-01 to ${currentDate}
    - "past 6 months" = calculate 6 months before ${currentDate}
+   - "past 3 months" = calculate 3 months before ${currentDate}
    - "last year" = ${currentYear - 1}-01-01 to ${currentYear - 1}-12-31
    - "this year" = ${currentYear}-01-01 to ${currentDate}
-10. If query is unclear, make reasonable assumptions
-11. Reject queries about non-vegetation topics
-12. For seasonal analysis, ensure full years are covered
-13. Sentinel-2 data only available from 2015 onwards
+10. If user asks about "changes", "trends", or viewing data over time WITHOUT specifying a time period, DEFAULT to past 3 months
+11. If query is unclear, make reasonable assumptions
+12. Reject queries about non-vegetation topics
+13. For seasonal analysis, ensure full years are covered
+14. Sentinel-2 data only available from 2015 onwards
 
 OUTPUT SCHEMA:
 {

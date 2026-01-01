@@ -10,6 +10,7 @@ type Status = "idle" | "planning" | "running" | "done" | "error";
 
 interface AnalysisResult {
   mapTileUrl?: string;
+  mapBounds?: [number, number, number, number];
   timeSeries?: Array<{ date: string; value: number }>;
   summary?: string;
   stats?: Record<string, any>;
@@ -63,6 +64,7 @@ export default function Home() {
       setStatus("done");
       setResult({
         mapTileUrl: analysisResult.mapTileUrl,
+        mapBounds: analysisResult.mapBounds,
         timeSeries: analysisResult.timeSeries,
         summary: `Analysis complete for ${analysisResult.metadata?.location}. Data from ${analysisResult.metadata?.timeRange.start} to ${analysisResult.metadata?.timeRange.end}.`,
         stats: analysisResult.stats,
@@ -117,17 +119,17 @@ export default function Home() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <MapPanel
                   tileUrl={result?.mapTileUrl}
-                  isLoading={status === "running"}
+                  bounds={result?.mapBounds}
                 />
                 <ChartPanel
                   data={result?.timeSeries}
-                  isLoading={status === "running"}
+                  loading={status === "running"}
                 />
               </div>
               <SummaryPanel
-                summary={result?.summary}
+                explanation={result?.summary}
                 stats={result?.stats}
-                isLoading={status === "running"}
+                loading={status === "running"}
               />
             </div>
           )}
