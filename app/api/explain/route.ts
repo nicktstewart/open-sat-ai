@@ -244,9 +244,15 @@ export async function POST(request: Request) {
 
     const duration = Date.now() - startTime;
 
+    console.log("[Explain API] ===== LLM OUTPUT START =====");
+    console.log(`[Explain API] Model: ${completion.model}`);
     console.log(
-      `[Explain API] Generated explanation in ${duration}ms (${completion.usage?.total_tokens} tokens)`
+      `[Explain API] Tokens used: ${completion.usage?.total_tokens || "N/A"}`
     );
+    console.log(`[Explain API] Generation time: ${duration}ms`);
+    console.log("[Explain API] Generated explanation:");
+    console.log(explanation);
+    console.log("[Explain API] ===== LLM OUTPUT END =====");
 
     // Store in cache
     explanationCache.set(cacheKey, explanation);

@@ -132,6 +132,10 @@ export async function executeNDVITimeSeries(
         });
       });
 
+      console.log(
+        `[GEE Response] Month ${yearMonth} raw result:`,
+        JSON.stringify(result)
+      );
       const ndviValue = result.NDVI;
 
       // Only add data points that have valid values
@@ -181,6 +185,7 @@ export async function executeNDVITimeSeries(
         if (error) {
           reject(new Error(error));
         } else {
+          console.log("[GEE Response] Map tile ID generated:", mapId.urlFormat);
           resolve(mapId.urlFormat);
         }
       }
@@ -243,6 +248,10 @@ export async function executeNDVIChange(
         if (error) {
           reject(new Error(error));
         } else {
+          console.log(
+            "[GEE Response] Change map tile ID generated:",
+            mapId.urlFormat
+          );
           resolve(mapId.urlFormat);
         }
       }
@@ -262,7 +271,16 @@ export async function executeNDVIChange(
       if (error) {
         reject(new Error(error));
       } else {
+        console.log(
+          "[GEE Response] Change statistics:",
+          JSON.stringify(result)
+        );
         const change = result.NDVI || 0;
+        console.log(
+          `[GEE Response] Calculated change percent: ${(change * 100).toFixed(
+            2
+          )}%`
+        );
         resolve(change * 100); // Convert to percentage
       }
     });

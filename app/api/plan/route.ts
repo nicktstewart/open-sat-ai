@@ -16,8 +16,8 @@ CURRENT DATE: ${currentDate}
 CURRENT YEAR: ${currentYear}
 
 ALLOWED ANALYSIS TYPES:
-- ndvi_change: Calculate vegetation change between two periods
-- ndvi_timeseries: Generate time series of vegetation index
+- ndvi_timeseries: Generate time series of vegetation index (DEFAULT - use this for most queries about "changes", "trends", or viewing data "over time")
+- ndvi_change: Calculate vegetation change between two periods (ONLY use when explicitly comparing two specific time periods like "before vs after")
 - ndvi_anomaly: Detect vegetation anomalies
 - seasonal_trend: Analyze seasonal vegetation patterns
 
@@ -32,10 +32,11 @@ ALLOWED OUTPUTS:
 - statistics: Summary statistics
 - summary: Text summary
 
-SUPPORTED LOCATIONS (use exact names or provide bbox):
-- Tokyo: [139.5, 35.5, 139.9, 35.8]
-- Osaka: [135.3, 34.5, 135.7, 34.8]
-- Kyoto: [135.6, 34.9, 135.9, 35.1]
+LOCATION FORMAT:
+- Use city/region names as strings: "Montreal", "New York", "London", "Tokyo", etc.
+- DO NOT try to calculate coordinates yourself
+- Examples: "Montreal" (not coordinates), "Paris" (not coordinates)
+- Only use bbox arrays [west, south, east, north] if the user explicitly provides coordinates
 
 RULES:
 1. Output ONLY valid JSON matching the schema
@@ -44,29 +45,40 @@ RULES:
 4. End date CANNOT exceed ${currentDate} (today)
 5. Start date must be before end date
 6. Time range cannot exceed 5 years
-7. Calculate relative dates based on current date:
+7. DEFAULT to ndvi_timeseries unless user explicitly asks to compare two periods
+8. Use city/region names for location, NOT coordinates
+9. Calculate relative dates based on current date:
    - "past 3 years" = ${currentYear - 3}-01-01 to ${currentDate}
    - "past year" = ${currentYear - 1}-01-01 to ${currentDate}
    - "past 6 months" = calculate 6 months before ${currentDate}
    - "last year" = ${currentYear - 1}-01-01 to ${currentYear - 1}-12-31
    - "this year" = ${currentYear}-01-01 to ${currentDate}
-8. If query is unclear, make reasonable assumptions
-9. Reject queries about non-vegetation topics
-10. For seasonal analysis, ensure full years are covered
-11. Sentinel-2 data only available from 2015 onwards
+10. If query is unclear, make reasonable assumptions
+11. Reject queries about non-vegetation topics
+12. For seasonal analysis, ensure full years are covered
+13. Sentinel-2 data only available from 2015 onwards
 
 OUTPUT SCHEMA:
 {
-  "analysisType": "ndvi_change" | "ndvi_timeseries" | "ndvi_anomaly" | "seasonal_trend",
+  "analysisType": "ndvi_timeseries" | "ndvi_change" | "ndvi_anomaly" | "seasonal_trend",
   "datasets": ["sentinel2" | "landsat8" | "modis"],
   "timeRange": {
     "start": "YYYY-MM-DD",
     "end": "YYYY-MM-DD"
   },
-  "location": "Tokyo" | [west, south, east, north],
+  "location": "City Name" | [west, south, east, north],
   "outputs": ["map" | "timeseries" | "statistics" | "summary"],
   "parameters": {} // optional
-}`;
+}
+
+EXAMPLES:
+Query: "Show vegetation changes in Montreal in the past year"
+Output: {"analysisType": "ndvi_timeseries", "datasets": ["sentinel2"], "timeRange": {"start": "${
+    currentYear - 1
+  }-01-01", "end": "${currentDate}"}, "location": "Montreal", "outputs": ["map", "timeseries", "summary"]}
+
+Query: "Compare vegetation before and after fire in California"
+Output: {"analysisType": "ndvi_change", ...}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -97,7 +109,7 @@ export async function POST(request: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
@@ -125,6 +137,13 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     const planText = data.choices[0]?.message?.content;
+
+    console.log("[Plan API] ===== LLM OUTPUT START =====");
+    console.log(`[Plan API] Model: ${data.model || "gpt-4o"}`);
+    console.log(`[Plan API] Tokens used: ${data.usage?.total_tokens || "N/A"}`);
+    console.log("[Plan API] Raw response:");
+    console.log(planText);
+    console.log("[Plan API] ===== LLM OUTPUT END =====");
 
     if (!planText) {
       return NextResponse.json(

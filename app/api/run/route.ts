@@ -12,6 +12,7 @@ import {
   locationToBBox,
   getLocationName,
 } from "@/lib/geo/resolve-location";
+import { geocodeLocation, isLocationName } from "@/lib/geo/geocoding";
 import { executeNDVIWorkflow } from "@/lib/gee/workflows/ndvi";
 
 /**
@@ -110,10 +111,28 @@ export async function POST(request: NextRequest) {
 
     // Resolve location to geometry
     let geometry;
-    let bbox;
+    let bbox: [number, number, number, number];
+    let resolvedLocationName: string;
+
     try {
-      geometry = resolveLocation(validatedPlan.location);
-      bbox = locationToBBox(validatedPlan.location);
+      // If location is a string (city name), geocode it first
+      if (isLocationName(validatedPlan.location)) {
+        console.log(
+          `[Run API] Geocoding location: "${validatedPlan.location}"`
+        );
+        bbox = await geocodeLocation(validatedPlan.location);
+        resolvedLocationName = validatedPlan.location;
+        console.log(`[Run API] Geocoded to bbox:`, bbox);
+
+        // Convert bbox to Earth Engine geometry
+        const ee = await import("@/lib/gee/client").then((m) => m.ee);
+        geometry = ee.Geometry.Rectangle([bbox[0], bbox[1], bbox[2], bbox[3]]);
+      } else {
+        // Location is already a bbox array
+        geometry = resolveLocation(validatedPlan.location);
+        bbox = locationToBBox(validatedPlan.location);
+        resolvedLocationName = getLocationName(validatedPlan.location);
+      }
     } catch (error) {
       return NextResponse.json(
         {
@@ -220,7 +239,7 @@ export async function POST(request: NextRequest) {
       ],
       metadata: {
         analysisType: validatedPlan.analysisType,
-        location: getLocationName(validatedPlan.location),
+        location: resolvedLocationName,
         timeRange: validatedPlan.timeRange,
         computeTime,
         cached: false,
