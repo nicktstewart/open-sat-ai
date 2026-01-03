@@ -1,92 +1,167 @@
 import { NextRequest, NextResponse } from "next/server";
-import { safeValidateAnalysisPlan } from "@/lib/schemas/analysis-plan";
+import { z } from "zod";
 
 /**
- * System prompt for the planner LLM
- * This enforces strict output format and allowed operations
+ * New, broader schema (replace your existing analysis-plan schema with this shape)
  */
+const AnalysisPlanSchema = z.object({
+  analysisType: z.enum([
+    "timeseries",
+    "change",
+    "anomaly",
+    "seasonal_trend",
+    "single_date_map",
+    "zonal_statistics",
+  ]),
+  dataProduct: z.enum([
+    "vegetation",
+    "water",
+    "urban",
+    "temperature",
+    "precipitation",
+    "soil_moisture",
+    "elevation",
+    "landcover",
+    "nightlights",
+    "population",
+    "air_quality",
+    "other",
+  ]),
+  datasetIds: z.array(z.string().min(3)).min(1), // e.g. ["ECMWF/ERA5/DAILY"], ["COPERNICUS/S2_SR"]
+  timeRange: z.object({
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
+  location: z.union([
+    z.string(), // "Tokyo"
+    z.tuple([z.number(), z.number(), z.number(), z.number()]), // bbox if user gives coords
+  ]),
+  outputs: z
+    .array(z.enum(["map", "timeseries", "statistics", "summary"]))
+    .min(1),
+
+  // Optional knobs for the eventual GEE executor
+  parameters: z
+    .object({
+      // indices / derived layers
+      index: z
+        .enum(["ndvi", "ndwi", "ndbi", "lst", "none"])
+        .optional()
+        .default("none"),
+
+      // raw band selection for non-index products (ERA5 variables, night lights band, etc.)
+      band: z.string().optional(),
+
+      // reducers + scale hints (executor can interpret these)
+      reducer: z.enum(["mean", "median", "sum", "min", "max"]).optional(),
+      scaleMeters: z.number().int().positive().optional(),
+
+      // cloud filtering (optical)
+      maxCloudPercent: z.number().min(0).max(100).optional(),
+    })
+    .optional(),
+});
+
 function getPlannerSystemPrompt(): string {
   const now = new Date();
-  const currentDate = now.toISOString().split("T")[0]; // YYYY-MM-DD format
+  const currentDate = now.toISOString().split("T")[0]; // YYYY-MM-DD
   const currentYear = now.getFullYear();
 
-  return `You are a satellite data analysis planner. Your job is to convert user queries into structured analysis plans.
+  return `You are a Google Earth Engine (GEE) analysis planner.
+Convert user requests into a strict JSON plan.
 
 CURRENT DATE: ${currentDate}
 CURRENT YEAR: ${currentYear}
 
-ALLOWED ANALYSIS TYPES:
-- ndvi_timeseries: Generate time series of vegetation index (DEFAULT - use this for most queries about "changes", "trends", or viewing data "over time")
-- ndvi_change: Calculate vegetation change between two periods (ONLY use when explicitly comparing two specific time periods like "before vs after")
-- ndvi_anomaly: Detect vegetation anomalies
-- seasonal_trend: Analyze seasonal vegetation patterns
+IMPORTANT:
+- You are planning analyses that will be executed in Google Earth Engine using dataset IDs from the Earth Engine Data Catalog.
+- Pick the BEST datasetId for the request. Use common, stable datasets when possible.
+- Output ONLY valid JSON (no markdown, no extra text).
 
-ALLOWED DATASETS:
-- sentinel2: Sentinel-2 optical imagery (10m resolution) - Available from 2015-06-23 onwards
-- landsat8: Landsat 8 optical imagery (30m resolution) - Available from 2013-04-11 onwards
-- modis: MODIS moderate resolution imagery (250m-1km) - Available from 2000-02-24 onwards
+SUPPORTED ANALYSIS TYPES:
+- timeseries: value over time for an AOI (default for "trends", "changes over time")
+- change: compare two dates/periods (only if user explicitly wants before vs after)
+- anomaly: detect unusual deviations
+- seasonal_trend: seasonality across >= 1 full year
+- single_date_map: map at/around a date
+- zonal_statistics: summary stats over a boundary (city/region)
 
-ALLOWED OUTPUTS:
-- map: Spatial visualization
-- timeseries: Time series chart
-- statistics: Summary statistics
-- summary: Text summary
+SUPPORTED DATA PRODUCTS (choose one):
+- vegetation, water, urban, temperature, precipitation, soil_moisture, elevation,
+  landcover, nightlights, population, air_quality, other
 
-LOCATION FORMAT:
-- Use city/region names as strings: "Montreal", "New York", "London", "Tokyo", etc.
-- DO NOT try to calculate coordinates yourself
-- Examples: "Montreal" (not coordinates), "Paris" (not coordinates)
-- Only use bbox arrays [west, south, east, north] if the user explicitly provides coordinates
+DATASET SELECTION GUIDELINES (examples of good defaults):
+Vegetation / optical:
+- Sentinel-2 surface reflectance: COPERNICUS/S2_SR (2017+ best; earlier exists but SR is typical)
+- Landsat 8/9 SR: LANDSAT/LC08/C02/T1_L2 (or Landsat collection 2)
 
-RULES:
-1. Output ONLY valid JSON matching the schema
-2. No explanations, no markdown, no extra text
-3. Dates must be YYYY-MM-DD format
-4. End date CANNOT exceed ${currentDate} (today)
-5. Start date must be before end date
-6. Time range cannot exceed 5 years
-7. DEFAULT to ndvi_timeseries unless user explicitly asks to compare two periods
-8. Use city/region names for location, NOT coordinates
-9. Calculate relative dates based on current date:
-   - "past 3 years" = ${currentYear - 3}-01-01 to ${currentDate}
-   - "past year" = ${currentYear - 1}-01-01 to ${currentDate}
-   - "past 6 months" = calculate 6 months before ${currentDate}
-   - "past 3 months" = calculate 3 months before ${currentDate}
-   - "last year" = ${currentYear - 1}-01-01 to ${currentYear - 1}-12-31
-   - "this year" = ${currentYear}-01-01 to ${currentDate}
-10. If user asks about "changes", "trends", or viewing data over time WITHOUT specifying a time period, DEFAULT to past 3 months
-11. If query is unclear, make reasonable assumptions
-12. Reject queries about non-vegetation topics
-13. For seasonal analysis, ensure full years are covered
-14. Sentinel-2 data only available from 2015 onwards
+Water:
+- Global Surface Water: JRC/GSW1_4/GlobalSurfaceWater
+
+SAR (flooding/roughness, all-weather):
+- Sentinel-1 GRD: COPERNICUS/S1_GRD
+
+Temperature / climate:
+- ERA5 daily: ECMWF/ERA5/DAILY
+
+Precipitation:
+- GPM IMERG: NASA/GPM_L3/IMERG_V07 (or closest stable IMERG collection)
+- CHIRPS daily: UCSB-CHG/CHIRPS/DAILY
+
+Elevation:
+- SRTM: USGS/SRTMGL1_003
+
+Land cover:
+- ESA WorldCover: ESA/WorldCover/v200 (or closest stable)
+
+Night lights:
+- VIIRS: NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG
+
+Population:
+- WorldPop: WorldPop/GP/100m/pop (pick best matching year)
+
+TIME RULES:
+- Dates must be YYYY-MM-DD.
+- End date cannot exceed ${currentDate}.
+- Start date must be before end date.
+- If the user does not specify a range:
+  - If they ask about "changes/trends": default to past 3 months.
+  - Otherwise default to past 1 month.
+- Keep time range <= 5 years unless the user explicitly asks for longer and it is essential; if so, choose a coarser dataset (e.g., MODIS/ERA5) and still keep <= 5 years.
+
+LOCATION RULES:
+- Use city/region name string unless user provides a bbox.
+- Do not invent coordinates.
 
 OUTPUT SCHEMA:
 {
-  "analysisType": "ndvi_timeseries" | "ndvi_change" | "ndvi_anomaly" | "seasonal_trend",
-  "datasets": ["sentinel2" | "landsat8" | "modis"],
-  "timeRange": {
-    "start": "YYYY-MM-DD",
-    "end": "YYYY-MM-DD"
-  },
+  "analysisType": "timeseries" | "change" | "anomaly" | "seasonal_trend" | "single_date_map" | "zonal_statistics",
+  "dataProduct": "vegetation" | "water" | "urban" | "temperature" | "precipitation" | "soil_moisture" | "elevation" | "landcover" | "nightlights" | "population" | "air_quality" | "other",
+  "datasetIds": ["GEE/CATALOG/ID"],
+  "timeRange": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
   "location": "City Name" | [west, south, east, north],
   "outputs": ["map" | "timeseries" | "statistics" | "summary"],
-  "parameters": {} // optional
+  "parameters": { "index"?: "ndvi"|"ndwi"|"ndbi"|"lst"|"none", "band"?: string, "reducer"?: "mean"|"median"|"sum"|"min"|"max", "scaleMeters"?: number, "maxCloudPercent"?: number }
 }
 
-EXAMPLES:
-Query: "Show vegetation changes in Montreal in the past year"
-Output: {"analysisType": "ndvi_timeseries", "datasets": ["sentinel2"], "timeRange": {"start": "${
-    currentYear - 1
-  }-01-01", "end": "${currentDate}"}, "location": "Montreal", "outputs": ["map", "timeseries", "summary"]}
+IMPORTANT: datasetIds must be an ARRAY with at least one dataset ID string.
 
-Query: "Compare vegetation before and after fire in California"
-Output: {"analysisType": "ndvi_change", ...}`;
+EXAMPLES:
+User: "Show rainfall trends in Osaka this year"
+-> timeseries, precipitation, datasetIds ["UCSB-CHG/CHIRPS/DAILY"], date ${currentYear}-01-01 to ${currentDate}, outputs ["map","timeseries","summary"], parameters.band set appropriately.
+
+User: "Night lights in Tokyo last year"
+-> single_date_map or timeseries, nightlights, datasetIds ["NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG"], timeRange ${
+    currentYear - 1
+  }-01-01 to ${currentYear - 1}-12-31, outputs ["map","summary"].
+
+Reject:
+- Requests unrelated to Earth observation / geospatial/environmental data.`;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { query } = await request.json();
-
     if (!query || typeof query !== "string") {
       return NextResponse.json(
         { error: "Query is required and must be a string" },
@@ -94,7 +169,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for OpenAI API key
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -103,7 +177,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call OpenAI API
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -113,18 +186,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          {
-            role: "system",
-            content: getPlannerSystemPrompt(),
-          },
-          {
-            role: "user",
-            content: query,
-          },
+          { role: "system", content: getPlannerSystemPrompt() },
+          { role: "user", content: query },
         ],
         response_format: { type: "json_object" },
         temperature: 0.1,
-        max_tokens: 500,
+        max_tokens: 700,
       }),
     });
 
@@ -139,14 +206,6 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     const planText = data.choices[0]?.message?.content;
-
-    console.log("[Plan API] ===== LLM OUTPUT START =====");
-    console.log(`[Plan API] Model: ${data.model || "gpt-4o"}`);
-    console.log(`[Plan API] Tokens used: ${data.usage?.total_tokens || "N/A"}`);
-    console.log("[Plan API] Raw response:");
-    console.log(planText);
-    console.log("[Plan API] ===== LLM OUTPUT END =====");
-
     if (!planText) {
       return NextResponse.json(
         { error: "No plan generated by LLM" },
@@ -154,54 +213,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse and validate the plan
-    let planData;
+    let planJson: unknown;
     try {
-      planData = JSON.parse(planText);
-    } catch (e) {
-      console.error("Failed to parse LLM response as JSON:", planText);
+      planJson = JSON.parse(planText);
+    } catch {
       return NextResponse.json(
         { error: "Invalid JSON response from LLM" },
         { status: 500 }
       );
     }
 
-    // Validate against schema
-    const validation = safeValidateAnalysisPlan(planData);
-
+    const validation = AnalysisPlanSchema.safeParse(planJson);
     if (!validation.success) {
-      console.error("Plan validation failed:", validation.error);
       return NextResponse.json(
-        {
-          error: "Invalid analysis plan",
-          details: validation.error.issues,
-        },
+        { error: "Invalid analysis plan", details: validation.error.issues },
         { status: 400 }
       );
     }
 
-    // Additional date validation
+    // Date sanity checks (same idea as your current code)
     const plan = validation.data;
     const now = new Date();
-    const currentDate = now.toISOString().split("T")[0];
-    const startDate = new Date(plan.timeRange.start);
-    const endDate = new Date(plan.timeRange.end);
-    const todayDate = new Date(currentDate);
+    const todayStr = now.toISOString().split("T")[0];
+    const today = new Date(todayStr);
+    const start = new Date(plan.timeRange.start);
+    const end = new Date(plan.timeRange.end);
 
-    // Validate dates don't exceed current date
-    if (endDate > todayDate) {
+    if (end > today) {
       return NextResponse.json(
         {
           error: "Invalid date range",
-          message: `End date (${plan.timeRange.end}) cannot be in the future. Current date is ${currentDate}.`,
+          message: `End date (${plan.timeRange.end}) cannot be in the future. Current date is ${todayStr}.`,
           userFriendly: true,
         },
         { status: 400 }
       );
     }
-
-    // Validate start date is before end date
-    if (startDate >= endDate) {
+    if (start >= end) {
       return NextResponse.json(
         {
           error: "Invalid date range",
@@ -212,21 +260,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate Sentinel-2 availability (from 2015-06-23)
-    if (plan.datasets.includes("sentinel2")) {
-      const sentinel2Start = new Date("2015-06-23");
-      if (startDate < sentinel2Start) {
-        console.warn(
-          `Sentinel-2 data not available before 2015-06-23. Start date: ${plan.timeRange.start}`
-        );
-      }
-    }
-
-    // Return validated plan
-    return NextResponse.json({
-      plan: validation.data,
-      raw: planData, // For debugging
-    });
+    return NextResponse.json({ plan });
   } catch (error) {
     console.error("Planning error:", error);
     return NextResponse.json(

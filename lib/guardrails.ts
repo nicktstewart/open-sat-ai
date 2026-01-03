@@ -21,14 +21,41 @@ const GUARDRAILS = {
 
   // Allowed analysis types (must match schema exactly)
   ALLOWED_ANALYSIS_TYPES: [
-    "ndvi_change",
-    "ndvi_timeseries",
-    "ndvi_anomaly",
+    "timeseries",
+    "change",
+    "anomaly",
     "seasonal_trend",
+    "single_date_map",
+    "zonal_statistics",
   ],
 
-  // Allowed datasets (must match schema exactly)
-  ALLOWED_DATASETS: ["sentinel2", "landsat8", "modis"],
+  // Allowed datasets (must match GEE Data Catalog IDs)
+  ALLOWED_DATASETS: [
+    // Optical
+    "COPERNICUS/S2_SR",
+    "COPERNICUS/S2_SR_HARMONIZED",
+    "LANDSAT/LC08/C02/T1_L2",
+    "LANDSAT/LC09/C02/T1_L2",
+    // SAR
+    "COPERNICUS/S1_GRD",
+    // Water
+    "JRC/GSW1_4/GlobalSurfaceWater",
+    // Climate
+    "ECMWF/ERA5/DAILY",
+    // Precipitation
+    "UCSB-CHG/CHIRPS/DAILY",
+    "NASA/GPM_L3/IMERG_V07",
+    // Elevation
+    "USGS/SRTMGL1_003",
+    // Land cover
+    "ESA/WorldCover/v200",
+    // Night lights
+    "NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG",
+    // Population
+    "WorldPop/GP/100m/pop",
+    // Air quality
+    "COPERNICUS/S5P/OFFL/L3_NO2",
+  ],
 };
 
 /**
@@ -110,7 +137,7 @@ function validateAnalysisType(plan: AnalysisPlan): ValidationResult {
  * Validate datasets are supported
  */
 function validateDatasets(plan: AnalysisPlan): ValidationResult {
-  const unsupportedDatasets = plan.datasets.filter(
+  const unsupportedDatasets = plan.datasetIds.filter(
     (ds) => !GUARDRAILS.ALLOWED_DATASETS.includes(ds)
   );
 
@@ -238,7 +265,7 @@ export function logAnalysisRequest(plan: AnalysisPlan, metadata?: any) {
   const log = {
     timestamp: new Date().toISOString(),
     analysisType: plan.analysisType,
-    datasets: plan.datasets,
+    datasets: plan.datasetIds,
     timeRange: plan.timeRange,
     location:
       typeof plan.location === "string"

@@ -5,7 +5,7 @@
 
 import { ee } from "@/lib/gee/client";
 import type { AnalysisPlan } from "@/lib/schemas/analysis-plan";
-import type { TimeSeriesPoint } from "@/lib/schemas/analysis-result";
+import type { WorkflowResult, TimeSeriesPoint } from "./types";
 
 /**
  * Cloud masking function for Sentinel-2
@@ -87,7 +87,7 @@ function createMonthlyComposite(
 export async function executeNDVITimeSeries(
   plan: AnalysisPlan,
   geometry: any
-): Promise<{ timeSeries: TimeSeriesPoint[]; mapTileUrl: string }> {
+): Promise<WorkflowResult> {
   const { timeRange } = plan;
 
   // Load Sentinel-2 collection
@@ -195,6 +195,14 @@ export async function executeNDVITimeSeries(
   return {
     timeSeries: monthlyNDVI,
     mapTileUrl: tileUrl,
+    attribution: [
+      {
+        dataset: "Sentinel-2 MSI",
+        source: "European Space Agency (ESA) / Copernicus",
+        license: "CC-BY-SA 3.0 IGO",
+        citation: "Contains modified Copernicus Sentinel data [2024]",
+      },
+    ],
   };
 }
 
@@ -204,7 +212,7 @@ export async function executeNDVITimeSeries(
 export async function executeNDVIChange(
   plan: AnalysisPlan,
   geometry: any
-): Promise<{ mapTileUrl: string; changePercent: number }> {
+): Promise<WorkflowResult> {
   const { timeRange } = plan;
 
   // Calculate midpoint to split into two periods
@@ -289,20 +297,31 @@ export async function executeNDVIChange(
   return {
     mapTileUrl: tileUrl,
     changePercent,
+    attribution: [
+      {
+        dataset: "Sentinel-2 MSI",
+        source: "European Space Agency (ESA) / Copernicus",
+        license: "CC-BY-SA 3.0 IGO",
+        citation: "Contains modified Copernicus Sentinel data [2024]",
+      },
+    ],
   };
 }
 
 /**
  * Main workflow dispatcher
  */
-export async function executeNDVIWorkflow(plan: AnalysisPlan, geometry: any) {
+export async function executeNDVIWorkflow(
+  plan: AnalysisPlan,
+  geometry: any
+): Promise<WorkflowResult> {
   switch (plan.analysisType) {
-    case "ndvi_timeseries":
+    case "timeseries":
     case "seasonal_trend":
       return executeNDVITimeSeries(plan, geometry);
 
-    case "ndvi_change":
-    case "ndvi_anomaly":
+    case "change":
+    case "anomaly":
       return executeNDVIChange(plan, geometry);
 
     default:

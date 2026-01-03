@@ -13,7 +13,7 @@ import {
   getLocationName,
 } from "@/lib/geo/resolve-location";
 import { geocodeLocation, isLocationName } from "@/lib/geo/geocoding";
-import { executeNDVIWorkflow } from "@/lib/gee/workflows/ndvi";
+import { resolveWorkflow } from "@/lib/gee/workflows";
 
 /**
  * Execute analysis based on a validated plan
@@ -38,7 +38,17 @@ export async function POST(request: NextRequest) {
     let validatedPlan;
     try {
       validatedPlan = validateAnalysisPlan(plan);
+      console.log("[Run API] Analysis plan validated:", {
+        dataProduct: validatedPlan.dataProduct,
+        analysisType: validatedPlan.analysisType,
+        location: validatedPlan.location,
+        timeRange: validatedPlan.timeRange,
+      });
     } catch (error) {
+      console.error("[Run API] Invalid analysis plan:", {
+        error: error instanceof Error ? error.message : "Unknown error",
+        receivedPlan: plan,
+      });
       return NextResponse.json(
         {
           error: "Invalid analysis plan",
@@ -143,12 +153,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Execute the workflow
+    // Execute the workflow using the router
     let workflowResult;
     try {
-      workflowResult = await executeNDVIWorkflow(validatedPlan, geometry);
+      const workflow = resolveWorkflow(validatedPlan);
+      console.log(
+        `[Run API] Executing workflow for dataProduct: ${validatedPlan.dataProduct}`
+      );
+      workflowResult = await workflow(validatedPlan, geometry);
+      console.log(
+        `[Run API] Workflow completed successfully for ${validatedPlan.dataProduct}`
+      );
     } catch (error) {
-      console.error("Workflow execution failed:", error);
+      console.error("[Run API] Workflow execution failed:", {
+        dataProduct: validatedPlan.dataProduct,
+        analysisType: validatedPlan.analysisType,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
       return NextResponse.json(
         {
           error: "Analysis execution failed",
@@ -228,17 +249,13 @@ export async function POST(request: NextRequest) {
       mapBounds: bbox,
       timeSeries,
       stats,
-      attributions: [
-        {
-          dataset: "Sentinel-2",
-          source: "European Space Agency (ESA) / Copernicus",
-          license: "CC-BY-SA 3.0 IGO",
-          citation: "Contains modified Copernicus Sentinel data [2024]",
-          dateRange: `${validatedPlan.timeRange.start} to ${validatedPlan.timeRange.end}`,
-        },
-      ],
+      attributions: workflowResult.attribution.map((attr) => ({
+        ...attr,
+        dateRange: `${validatedPlan.timeRange.start} to ${validatedPlan.timeRange.end}`,
+      })),
       metadata: {
         analysisType: validatedPlan.analysisType,
+        dataProduct: validatedPlan.dataProduct,
         location: resolvedLocationName,
         timeRange: validatedPlan.timeRange,
         computeTime,

@@ -13,7 +13,7 @@ export function generateCacheKey(plan: AnalysisPlan): string {
   // Normalize the plan to ensure consistent ordering
   const normalizedPlan = {
     analysisType: plan.analysisType,
-    datasets: [...plan.datasets].sort(),
+    datasets: [...plan.datasetIds].sort(),
     timeRange: {
       start: plan.timeRange.start,
       end: plan.timeRange.end,
