@@ -48,6 +48,7 @@ export const datasetIdEnum = z.enum([
 
   // Water
   "JRC/GSW1_4/GlobalSurfaceWater", // Global Surface Water
+  "JRC/GSW1_4/YearlyHistory", // Global Surface Water Yearly History
 
   // Climate / weather
   "ECMWF/ERA5/DAILY", // ERA5 daily aggregates
@@ -67,8 +68,19 @@ export const datasetIdEnum = z.enum([
   // Population
   "WorldPop/GP/100m/pop", // WorldPop population
 
-  // Air quality (example)
-  "COPERNICUS/S5P/OFFL/L3_NO2", // Sentinel-5P NO2
+  // Air quality - Sentinel-5P TROPOMI
+  "COPERNICUS/S5P/OFFL/L3_NO2", // Sentinel-5P NO2 (offline)
+  "COPERNICUS/S5P/NRTI/L3_NO2", // Sentinel-5P NO2 (near-real-time)
+  "COPERNICUS/S5P/OFFL/L3_CO", // Sentinel-5P CO
+  "COPERNICUS/S5P/NRTI/L3_CO", // Sentinel-5P CO (near-real-time)
+  "COPERNICUS/S5P/OFFL/L3_O3", // Sentinel-5P O3
+  "COPERNICUS/S5P/NRTI/L3_O3", // Sentinel-5P O3 (near-real-time)
+  "COPERNICUS/S5P/OFFL/L3_SO2", // Sentinel-5P SO2
+  "COPERNICUS/S5P/NRTI/L3_SO2", // Sentinel-5P SO2 (near-real-time)
+  "COPERNICUS/S5P/OFFL/L3_CH4", // Sentinel-5P CH4
+  "COPERNICUS/S5P/NRTI/L3_CH4", // Sentinel-5P CH4 (near-real-time)
+  "COPERNICUS/S5P/OFFL/L3_HCHO", // Sentinel-5P HCHO
+  "COPERNICUS/S5P/NRTI/L3_HCHO", // Sentinel-5P HCHO (near-real-time)
 ]);
 
 /**

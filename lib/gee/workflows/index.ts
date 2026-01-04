@@ -8,6 +8,8 @@ import type { WorkflowExecutor } from "./types";
 import { executeNDVIWorkflow } from "./ndvi";
 import { executeTemperatureWorkflow } from "./temperature";
 import { executePrecipitationWorkflow } from "./precipitation";
+import { executeWaterWorkflow } from "./water";
+import { executeAirQualityWorkflow } from "./air_quality";
 
 /**
  * Resolve the appropriate workflow executor for a given analysis plan
@@ -26,18 +28,20 @@ export function resolveWorkflow(plan: AnalysisPlan): WorkflowExecutor {
     case "precipitation":
       return executePrecipitationWorkflow;
 
+    case "water":
+      return executeWaterWorkflow;
+
+    case "air_quality":
+      return executeAirQualityWorkflow;
+
     // Future workflows can be added here:
-    // case "water":
-    //   return executeWaterWorkflow;
     // case "nightlights":
     //   return executeNightlightsWorkflow;
-    // case "air_quality":
-    //   return executeAirQualityWorkflow;
 
     default:
       throw new Error(
         `No workflow implemented for dataProduct="${plan.dataProduct}". ` +
-          `Currently supported: vegetation, temperature, precipitation.`
+          `Currently supported: vegetation, temperature, precipitation, water, air_quality.`
       );
   }
 }
