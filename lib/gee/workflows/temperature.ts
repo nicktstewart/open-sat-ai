@@ -284,6 +284,8 @@ export async function executeTemperatureWorkflow(
   switch (plan.analysisType) {
     case "timeseries":
     case "seasonal_trend":
+    case "single_date_map":
+    case "zonal_statistics":
       return executeTemperatureTimeSeries(plan, geometry);
 
     case "change":

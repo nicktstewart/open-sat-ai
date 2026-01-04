@@ -282,6 +282,8 @@ export async function executePrecipitationWorkflow(
   switch (plan.analysisType) {
     case "timeseries":
     case "seasonal_trend":
+    case "single_date_map":
+    case "zonal_statistics":
       return executePrecipitationTimeSeries(plan, geometry);
 
     case "change":

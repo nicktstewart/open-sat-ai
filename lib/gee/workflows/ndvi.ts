@@ -82,6 +82,109 @@ function createMonthlyComposite(
 }
 
 /**
+ * Execute NDVI single-date map/statistics workflow
+ */
+export async function executeNDVISingleDateMap(
+  plan: AnalysisPlan,
+  geometry: any
+): Promise<WorkflowResult> {
+  const { timeRange } = plan;
+  const maxCloudPercent = plan.parameters?.maxCloudPercent ?? 20;
+
+  // Load Sentinel-2 collection for the specified window
+  let collection = ee
+    .ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterBounds(geometry)
+    .filterDate(timeRange.start, timeRange.end);
+
+  if (typeof maxCloudPercent === "number") {
+    collection = collection.filter(
+      ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", maxCloudPercent)
+    );
+  }
+
+  // Apply cloud mask and calculate NDVI
+  collection = collection.map(maskS2Clouds).map(addNDVI);
+
+  // Create a median composite for stable visualization
+  const ndviComposite = collection.select("NDVI").median();
+
+  // Get tile URL for map visualization
+  const tileUrl = await new Promise<string>((resolve, reject) => {
+    ndviComposite.getMapId(
+      {
+        min: 0,
+        max: 1,
+        palette: ["brown", "yellow", "green", "darkgreen"],
+      },
+      (mapId: any, error?: string) => {
+        if (error) {
+          reject(new Error(error));
+        } else {
+          console.log("[NDVI Workflow] Single-date map tile:", mapId.urlFormat);
+          resolve(mapId.urlFormat);
+        }
+      }
+    );
+  });
+
+  // Calculate summary statistics over the AOI
+  const reducer = ee.Reducer.mean().combine({
+    reducer2: ee.Reducer.minMax(),
+    sharedInputs: true,
+  });
+
+  const statsResult = await new Promise<any>((resolve, reject) => {
+    const stats = ndviComposite.reduceRegion({
+      reducer,
+      geometry: geometry,
+      scale: 100,
+      maxPixels: 1e9,
+    });
+
+    stats.evaluate((res: any, error?: string) => {
+      if (error) {
+        reject(new Error(error));
+      } else {
+        resolve(res);
+      }
+    });
+  });
+
+  const meanNDVI =
+    statsResult?.NDVI ?? statsResult?.NDVI_mean ?? statsResult?.mean;
+  const minNDVI = statsResult?.NDVI_min;
+  const maxNDVI = statsResult?.NDVI_max;
+
+  if (
+    meanNDVI === null ||
+    meanNDVI === undefined ||
+    Number.isNaN(meanNDVI)
+  ) {
+    throw new Error(
+      "No valid NDVI data found for the specified time range and location."
+    );
+  }
+
+  return {
+    mapTileUrl: tileUrl,
+    stats: {
+      mean: meanNDVI,
+      min: minNDVI ?? undefined,
+      max: maxNDVI ?? undefined,
+    },
+    attribution: [
+      {
+        dataset: "Sentinel-2 MSI",
+        source: "European Space Agency (ESA) / Copernicus",
+        license: "CC-BY-SA 3.0 IGO",
+        citation: "Contains modified Copernicus Sentinel data [2024]",
+      },
+    ],
+  };
+}
+
+/**
  * Execute NDVI time series workflow
  */
 export async function executeNDVITimeSeries(
@@ -319,6 +422,10 @@ export async function executeNDVIWorkflow(
     case "timeseries":
     case "seasonal_trend":
       return executeNDVITimeSeries(plan, geometry);
+
+    case "single_date_map":
+    case "zonal_statistics":
+      return executeNDVISingleDateMap(plan, geometry);
 
     case "change":
     case "anomaly":

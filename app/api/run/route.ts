@@ -189,9 +189,11 @@ export async function POST(request: NextRequest) {
       "changePercent" in workflowResult
         ? workflowResult.changePercent
         : undefined;
+    const workflowStats =
+      "stats" in workflowResult ? workflowResult.stats : undefined;
 
     // Calculate comprehensive statistics from time series
-    let stats: any = { changePercent };
+    let stats: any = workflowStats ? { ...workflowStats } : {};
 
     if (timeSeries && timeSeries.length > 0) {
       const values = timeSeries.map((p: any) => p.value);
@@ -231,6 +233,7 @@ export async function POST(request: NextRequest) {
       }
 
       stats = {
+        ...stats,
         mean,
         min,
         max,
@@ -242,6 +245,11 @@ export async function POST(request: NextRequest) {
         }${percentChange.toFixed(1)}%)`,
         changePercent,
       };
+    } else if (
+      changePercent !== undefined &&
+      stats.changePercent === undefined
+    ) {
+      stats.changePercent = changePercent;
     }
 
     const result = {
