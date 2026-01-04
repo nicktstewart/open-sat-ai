@@ -48,6 +48,8 @@ declare module "@google/earthengine" {
 
   export interface ReducerConstructor {
     mean(): any;
+    min(): any;
+    max(): any;
   }
 
   export interface FeatureCollection {

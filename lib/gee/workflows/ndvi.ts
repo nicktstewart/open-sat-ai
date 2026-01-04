@@ -129,10 +129,15 @@ export async function executeNDVISingleDateMap(
   });
 
   // Calculate summary statistics over the AOI
-  const reducer = ee.Reducer.mean().combine({
-    reducer2: ee.Reducer.minMax(),
-    sharedInputs: true,
-  });
+  const reducer = ee.Reducer.mean()
+    .combine({
+      reducer2: ee.Reducer.min(),
+      sharedInputs: true,
+    })
+    .combine({
+      reducer2: ee.Reducer.max(),
+      sharedInputs: true,
+    });
 
   const statsResult = await new Promise<any>((resolve, reject) => {
     const stats = ndviComposite.reduceRegion({
@@ -156,11 +161,7 @@ export async function executeNDVISingleDateMap(
   const minNDVI = statsResult?.NDVI_min;
   const maxNDVI = statsResult?.NDVI_max;
 
-  if (
-    meanNDVI === null ||
-    meanNDVI === undefined ||
-    Number.isNaN(meanNDVI)
-  ) {
+  if (meanNDVI === null || meanNDVI === undefined || Number.isNaN(meanNDVI)) {
     throw new Error(
       "No valid NDVI data found for the specified time range and location."
     );

@@ -86,7 +86,7 @@ export default function Home() {
               Satellite Data Explorer
             </h1>
             <p className="text-muted-foreground">
-              Ask questions about Earth observation data powered by AI
+              大気汚染、降水量、植生変化についてAIに聞くと衛星データをもとに地図上に表示します。
             </p>
           </div>
 
