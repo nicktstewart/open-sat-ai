@@ -40,6 +40,7 @@ export async function executePrecipitationTimeSeries(
   // Load CHIRPS daily precipitation data
   const collection = ee
     .ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+    .filterBounds(geometry)
     .filterDate(timeRange.start, timeRange.end)
     .select("precipitation");
 
@@ -191,6 +192,7 @@ export async function executePrecipitationChange(
   // Period 1: Before
   const collection1 = ee
     .ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+    .filterBounds(geometry)
     .filterDate(timeRange.start, midDateStr)
     .select("precipitation");
 
@@ -199,6 +201,7 @@ export async function executePrecipitationChange(
   // Period 2: After
   const collection2 = ee
     .ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+    .filterBounds(geometry)
     .filterDate(midDateStr, timeRange.end)
     .select("precipitation");
 

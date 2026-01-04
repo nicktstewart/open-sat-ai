@@ -81,6 +81,7 @@ export async function executeAirQualityTimeSeries(
   // Load Sentinel-5P TROPOMI collection
   const collection = ee
     .ImageCollection(datasetId)
+    .filterBounds(geometry)
     .filterDate(timeRange.start, timeRange.end)
     .select(bandName);
 
@@ -286,6 +287,7 @@ export async function executeAirQualityChange(
   // Period 1: Before
   const collection1 = ee
     .ImageCollection(datasetId)
+    .filterBounds(geometry)
     .filterDate(timeRange.start, midDateStr)
     .select(bandName);
 
@@ -294,6 +296,7 @@ export async function executeAirQualityChange(
   // Period 2: After
   const collection2 = ee
     .ImageCollection(datasetId)
+    .filterBounds(geometry)
     .filterDate(midDateStr, timeRange.end)
     .select(bandName);
 
